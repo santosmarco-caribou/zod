@@ -1,0 +1,66 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": { "project": "./tsconfig.json" },
+  "env": { "es6": true },
+  "ignorePatterns": ["node_modules", "build", "coverage"],
+  "plugins": ["eslint-comments", "jest", "unicorn", "eslint-plugin-tsdoc"],
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:eslint-comments/recommended",
+    "plugin:jest/recommended",
+    "plugin:jest/style",
+    "plugin:unicorn/recommended",
+    "prettier"
+  ],
+  "globals": { "BigInt": true, "console": true, "WebAssembly": true },
+  "rules": {
+    "@typescript-eslint/explicit-module-boundary-types": "off",
+    "@typescript-eslint/no-empty-interface": "off",
+    "@typescript-eslint/no-namespace": "off",
+    "@typescript-eslint/no-unused-vars": ["off", { "argsIgnorePattern": "^_" }],
+    "eslint-comments/disable-enable-pair": [
+      "error",
+      { "allowWholeFile": true }
+    ],
+    "eslint-comments/no-unused-disable": "error",
+    "unicorn/prevent-abbreviations": [
+      "warn",
+      {
+        "allowList": {
+          "ctx": true,
+          "def": true,
+          "Def": true
+        },
+        "replacements": {
+          "res": {
+            "response": false
+          },
+          "param": {
+            "parameter": false
+          }
+        }
+      }
+    ],
+    "unicorn/no-useless-undefined": "off",
+    "unicorn/no-array-callback-reference": "off",
+    "unicorn/no-null": "off",
+    "unicorn/no-array-reduce": "off",
+    "jest/expect-expect": [
+      "warn",
+      { "assertFunctionNames": ["expect", "expectTypeOf"] }
+    ],
+    "tsdoc/syntax": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["./src/__test__/**/*.spec.ts", "./jest.config.js"],
+      "parserOptions": { "project": "./tsconfig.test.json" }
+    },
+    {
+      "files": ["./examples/**/*.ts"],
+      "parserOptions": { "project": "./tsconfig.examples.json" }
+    }
+  ]
+}

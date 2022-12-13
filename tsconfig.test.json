@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["__test__/**/*.ts", "jest.config.js"]
+}
