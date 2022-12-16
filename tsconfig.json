@@ -33,5 +33,5 @@
     "traceResolution": false
   },
   "exclude": ["node_modules/**"],
-  "include": ["src/**/*.ts", "examples/**/*.ts"]
+  "include": ["src/**/*.ts"]
 }

@@ -1,142 +1,113 @@
-import type { ZError } from './error'
-import type { ParsedType, ParsePath } from './parse'
-import type { ZTypeName } from './type-names'
-import type { ZEnumValue, ZLiteralValue } from './types'
+import type { TError } from './error'
+import type { ParsePath, TParsedType } from './parse'
+import type { TTypeName } from './type-names'
+import type { TStringCheck } from './types'
 import type { utils } from './utils'
 
-export const IssueKind = {
-  Required: 'required',
-  InvalidType: 'invalid_type',
-  InvalidEnumValue: 'invalid_enum_value',
-  InvalidLiteral: 'invalid_literal',
-  InvalidUnion: 'invalid_union',
-  TooSmall: 'too_small',
-  TooBig: 'too_big',
-  Forbidden: 'forbidden',
-  Custom: 'custom',
-} as const
+export enum IssueKind {
+  Required = 'required',
+  InvalidType = 'invalid_type',
+  InvalidString = 'invalid_string',
+  InvalidEnumValue = 'invalid_enum_value',
+  InvalidLiteral = 'invalid_literal',
+  InvalidUnion = 'invalid_union',
+  InvalidInstance = 'invalid_instance',
+  TooSmall = 'too_small',
+  TooBig = 'too_big',
+  Forbidden = 'forbidden',
+  Custom = 'custom',
+}
 
-export type IssueKind = typeof IssueKind[keyof typeof IssueKind]
-
-export type IssuePayload = utils.AnyReadonlyRecord | null
+export type IssuePayload = Record<string, unknown> | null
 
 export interface IssueInput {
   readonly data: unknown
-  readonly type: ParsedType
+  readonly type: TParsedType
 }
 
-export type MakeIssue<Payload extends IssuePayload> = {
+type MakeIssue<P extends IssuePayload> = {
   readonly input: IssueInput
   readonly path: ParsePath
   readonly message: string
-  readonly origin: ZTypeName
-  readonly hint: string
-} & {
-  0: { readonly payload: Payload }
-  1: unknown
-}[utils.Equals<Payload, null>]
+  readonly typeName: TTypeName
+  readonly typeHint: string
+} & (P extends null ? unknown : { readonly payload: P })
 
-export type IssueMapBase = {
-  readonly [IssueKind.Required]: MakeIssue<null>
-  readonly [IssueKind.InvalidType]: MakeIssue<{
-    readonly expected:
-      | ParsedType
-      | readonly Exclude<ParsedType, readonly unknown[]>[]
-    readonly received: ParsedType
+export type IssueMap = {
+  [IssueKind.Required]: MakeIssue<null>
+  [IssueKind.InvalidType]: MakeIssue<{
+    readonly expected: TParsedType
+    readonly received: TParsedType
   }>
-  readonly [IssueKind.InvalidEnumValue]: MakeIssue<{
-    readonly expected: {
-      readonly values: readonly ZEnumValue[]
-      readonly formatted: string
-    }
-    readonly received: {
-      readonly value: ZEnumValue
-      readonly formatted: string
-    }
+  [IssueKind.InvalidString]: TStringCheck
+  [IssueKind.InvalidEnumValue]: MakeIssue<{
+    readonly expected: { readonly values: readonly (string | number)[]; readonly formatted: string }
+    readonly received: { readonly value: string | number; readonly formatted: string }
   }>
-  readonly [IssueKind.InvalidLiteral]: MakeIssue<{
-    readonly expected: {
-      readonly value: ZLiteralValue
-      readonly formatted: string
-    }
-    readonly received: {
-      readonly value: ZLiteralValue
-      readonly formatted: string
-    }
+  [IssueKind.InvalidLiteral]: MakeIssue<{
+    readonly expected: { readonly value: utils.Primitive; readonly formatted: utils.Literalize }
+    readonly received: { readonly value: utils.Primitive; readonly formatted: utils.Literalize }
   }>
-  readonly [IssueKind.InvalidUnion]: MakeIssue<{
-    readonly unionErrors: readonly ZError[]
+  [IssueKind.InvalidUnion]: MakeIssue<{
+    readonly unionErrors: readonly TError[]
   }>
-  readonly [IssueKind.TooSmall]: MakeIssue<{
+  [IssueKind.InvalidInstance]: MakeIssue<{
+    readonly expected: { readonly className: string }
+  }>
+  [IssueKind.TooSmall]: MakeIssue<{
     readonly type: 'string' | 'number' | 'date' | 'array' | 'set'
     readonly expected: { readonly value: number; readonly inclusive: boolean }
     readonly received: number
   }>
-  readonly [IssueKind.TooBig]: MakeIssue<{
+  [IssueKind.TooBig]: MakeIssue<{
     readonly type: 'string' | 'number' | 'date' | 'array' | 'set'
     readonly expected: { readonly value: number; readonly inclusive: boolean }
     readonly received: number
   }>
-  readonly [IssueKind.Forbidden]: MakeIssue<null>
-  readonly [IssueKind.Custom]: MakeIssue<{
+  [IssueKind.Forbidden]: MakeIssue<null>
+  [IssueKind.Custom]: MakeIssue<{
     readonly message?: string
-    readonly params?: utils.AnyReadonlyRecord
+    readonly params?: unknown
   }>
-}
+} extends infer X
+  ? { [K in keyof X]: X[K] & { readonly kind: K } }
+  : never
 
-interface IssueOptions {
-  omitKeys?: keyof utils.UnionToIntersection<utils.ValueOf<IssueMap>>
-  intersect?: utils.AnyReadonlyRecord
-}
+export type Issue<K extends IssueKind = IssueKind> = IssueMap[K]
 
-export type IssueMap<Options extends IssueOptions = utils.Empty<IssueOptions>> =
-  {
-    [K in IssueKind]: Omit<
-      IssueMapBase[K] & { readonly kind: K },
-      Options['omitKeys'] extends string ? Options['omitKeys'] : never
-    > &
-      (Options['intersect'] extends utils.AnyReadonlyRecord
-        ? Options['intersect']
-        : unknown)
-  }
-
-export type Issue<
-  T extends IssueKind = IssueKind,
-  Options extends IssueOptions = utils.Empty<IssueOptions>
-> = IssueMap<Options>[T]
-
-export type AnyIssue = Issue<
-  IssueKind,
-  {
-    omitKeys: 'kind' | 'payload'
-    intersect: {
-      readonly kind: IssueKind
-      readonly payload: unknown
+export type MakeChecks<T extends Record<string, Record<string, unknown> | null>> = {
+  [K in keyof T]: MakeIssue<
+    (T[K] extends null ? unknown : T[K]) & {
+      readonly check: K
+      readonly message?: string | undefined
     }
-  }
->
+  >
+}[keyof T]
 
-export type IssueHasPayload<T extends IssueKind> = T extends unknown
-  ? utils.Extends<'payload', keyof Issue<T>>
-  : never
+export namespace checks {
+  export type Base = { readonly payload: { readonly check: string } }
 
-export type GetIssuePayload<T extends IssueKind> = T extends unknown
-  ? 'payload' extends keyof Issue<T>
-    ? Issue<T>['payload']
+  type MinMaxLengthSize<T extends 'min' | 'max' | 'length' | 'size', V = number> = utils.Simplify<
+    { readonly [K in T]: V } & { readonly inclusive?: boolean }
+  >
+  export type Min<V = number> = MinMaxLengthSize<'min', V>
+  export type Max<V = number> = MinMaxLengthSize<'max', V>
+  export type Length<V = number> = MinMaxLengthSize<'length', V>
+  export type Size<V = number> = MinMaxLengthSize<'size', V>
+
+  export type Get<T extends Base, C extends T['payload']['check']> = Extract<
+    T,
+    { readonly payload: { readonly check: C } }
+  >
+
+  export type PayloadOf<T extends Base, C extends T['payload']['check'] = T['payload']['check']> = Required<
+    Get<T, C>['payload']
+  >
+
+  export type OptionsOf<T extends Base, C extends T['payload']['check'] = T['payload']['check']> = Get<
+    T,
+    C
+  >['payload'] extends infer P
+    ? utils.Simplify<Pick<P, utils.OptionalKeysOf<P>>>
     : never
-  : never
-
-export type PickFromIssuePayload<
-  T extends IssueKind,
-  K extends keyof Issue<T>['payload' & keyof Issue<T>]
-> = Pick<Issue<T>['payload' & keyof Issue<T>], K>
-
-export type OmitFromIssuePayload<
-  T extends IssueKind,
-  K extends keyof Issue<T>['payload' & keyof Issue<T>]
-> = utils.StrictOmit<Issue<T>['payload' & keyof Issue<T>], K>
-
-export type GetIssueCheckKind<T extends IssueKind> = Extract<
-  Issue<T>,
-  { readonly payload: { readonly check: string } }
->['payload']['check']
+}

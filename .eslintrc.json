@@ -20,10 +20,7 @@
     "@typescript-eslint/no-empty-interface": "off",
     "@typescript-eslint/no-namespace": "off",
     "@typescript-eslint/no-unused-vars": ["off", { "argsIgnorePattern": "^_" }],
-    "eslint-comments/disable-enable-pair": [
-      "error",
-      { "allowWholeFile": true }
-    ],
+    "eslint-comments/disable-enable-pair": ["error", { "allowWholeFile": true }],
     "eslint-comments/no-unused-disable": "error",
     "unicorn/prevent-abbreviations": [
       "warn",
@@ -43,19 +40,17 @@
         }
       }
     ],
+    "unicorn/consistent-function-scoping": "off",
     "unicorn/no-useless-undefined": "off",
     "unicorn/no-array-callback-reference": "off",
     "unicorn/no-null": "off",
     "unicorn/no-array-reduce": "off",
-    "jest/expect-expect": [
-      "warn",
-      { "assertFunctionNames": ["expect", "expectTypeOf"] }
-    ],
+    "jest/expect-expect": ["warn", { "assertFunctionNames": ["expect", "expectTypeOf"] }],
     "tsdoc/syntax": "warn"
   },
   "overrides": [
     {
-      "files": ["./src/__test__/**/*.spec.ts", "./jest.config.js"],
+      "files": ["./__test__/**/*.spec.ts", "./jest.config.js"],
       "parserOptions": { "project": "./tsconfig.test.json" }
     },
     {

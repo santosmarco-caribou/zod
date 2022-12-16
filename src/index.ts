@@ -1,4 +1,4 @@
-import * as z from './_external'
+import * as t from './_external'
 export * from './_external'
-export * as z from './_external'
-export default z
+export * as t from './_external'
+export default t

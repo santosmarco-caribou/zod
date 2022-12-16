@@ -1,433 +1,298 @@
-import {
-  DEFAULT_ERROR_MAP,
-  ErrorMapIssue,
-  resolveErrorMap,
-  resolveToErrorMapFunction,
-  ZError,
-  type ErrorMap,
-} from './error'
-import { ZGlobal } from './global'
-import {
-  IssueKind,
-  type AnyIssue,
-  type GetIssuePayload,
-  type IssueHasPayload,
-  type OmitFromIssuePayload,
-  type PickFromIssuePayload,
-} from './issues'
-import type { ZEnumValue } from './types'
+import { DEFAULT_ERROR_MAP, TError, type ErrorMap } from './error'
+import { IssueKind, type Issue } from './issues'
+import type { AnyTType, LiteralValue } from './types'
 import { utils } from './utils'
-import type { AnyZ, InputOf, OutputOf } from './z'
 
-/* -------------------------------------------------------------------------- */
-/*                                 ParsedType                                 */
-/* -------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------------------------------------------------ */
+/*                                                     ParseResult                                                    */
+/* ------------------------------------------------------------------------------------------------------------------ */
 
-const ParsedTypeBase = {
-  Array: 'Array',
-  BigInt: 'bigint',
-  Boolean: 'boolean',
-  Date: 'Date',
-  Function: 'Function',
-  Map: 'Map',
-  NaN: 'NaN',
-  Null: 'null',
-  Number: 'number',
-  Object: 'object',
-  Promise: 'Promise',
-  Set: 'Set',
-  String: 'string',
-  Symbol: 'symbol',
-  Undefined: 'undefined',
-  Unknown: 'unknown',
-  Void: 'void',
-} as const
-
-export const ParsedType = {
-  ...ParsedTypeBase,
-  Primitive: [
-    ParsedTypeBase.String,
-    ParsedTypeBase.Number,
-    ParsedTypeBase.BigInt,
-    ParsedTypeBase.Boolean,
-    ParsedTypeBase.Symbol,
-    ParsedTypeBase.Null,
-    ParsedTypeBase.Undefined,
-  ],
-} as const
-
-export type ParsedType = typeof ParsedType[keyof typeof ParsedType]
-
-export const getParsedType = (data: unknown) => {
-  switch (typeof data) {
-    case 'string': {
-      return ParsedType.String
-    }
-    case 'number': {
-      if (Number.isNaN(data)) return ParsedType.NaN
-      return ParsedType.Number
-    }
-    case 'bigint': {
-      return ParsedType.BigInt
-    }
-    case 'boolean': {
-      return ParsedType.Boolean
-    }
-    case 'symbol': {
-      return ParsedType.Symbol
-    }
-    case 'function': {
-      return ParsedType.Function
-    }
-    case 'undefined': {
-      return ParsedType.Undefined
-    }
-    case 'object': {
-      if (data === null) return ParsedType.Null
-      if (Array.isArray(data)) return ParsedType.Array
-      if (data instanceof Date) return ParsedType.Date
-      if (data instanceof Map) return ParsedType.Map
-      if (data instanceof Promise) return ParsedType.Promise
-      if (data instanceof Set) return ParsedType.Set
-      return ParsedType.Object
-    }
-
-    default: {
-      return ParsedType.Unknown
-    }
-  }
-}
-
-/* -------------------------------------------------------------------------- */
-/*                                 ParseResult                                */
-/* -------------------------------------------------------------------------- */
-
-export type SuccessfulParseResult<Output = unknown> = {
+export interface SuccessfulParseResult<O = unknown> {
   readonly ok: true
-  readonly data: Output
+  readonly data: O
   readonly error?: never
 }
 
-export type FailedParseResult<Output = unknown, Input = Output> = {
+export interface FailedParseResult<O = unknown, I = O> {
   readonly ok: false
   readonly data?: never
-  readonly error: ZError<Output, Input>
+  readonly error: TError<O, I>
 }
 
-export type SyncParseResult<Output = unknown, Input = Output> =
-  | SuccessfulParseResult<Output>
-  | FailedParseResult<Output, Input>
+export type SyncParseResult<O = unknown, I = O> = SuccessfulParseResult<O> | FailedParseResult<O, I>
+export type AsyncParseResult<O = unknown, I = O> = Promise<SyncParseResult<O, I>>
+export type ParseResult<O = unknown, I = O> = SyncParseResult<O, I> | AsyncParseResult<O, I>
 
-export type AsyncParseResult<Output = unknown, Input = Output> = Promise<
-  SuccessfulParseResult<Output> | FailedParseResult<Output, Input>
->
-
-export type ParseResult<Output = unknown, Input = Output> =
-  | SyncParseResult<Output, Input>
-  | AsyncParseResult<Output, Input>
-
-export type SyncParseResultOf<T> = SyncParseResult<OutputOf<T>, InputOf<T>>
-export type AsyncParseResultOf<T> = AsyncParseResult<OutputOf<T>, InputOf<T>>
-export type ParseResultOf<T> = ParseResult<OutputOf<T>, InputOf<T>>
-
-/* -------------------------------------------------------------------------- */
-/*                                ParseContext                                */
-/* -------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------------------------------------------------ */
+/*                                                    ParseContext                                                    */
+/* ------------------------------------------------------------------------------------------------------------------ */
 
 export type ParsePath = readonly (string | number)[]
 
-export const ParseStatus = {
-  Valid: 'valid',
-  Dirty: 'dirty',
-  Invalid: 'invalid',
-} as const
+export enum ParseStatus {
+  Valid = 'valid',
+  Invalid = 'invalid',
+}
 
-export type ParseStatus = typeof ParseStatus[keyof typeof ParseStatus]
-
-export type ParseContextCommon = {
-  readonly async: boolean
+export interface ParseOptions {
   readonly abortEarly?: boolean
+  readonly errorMap?: ErrorMap
+}
+
+export interface ParseContextCommon extends utils.StrictOmit<ParseOptions, 'errorMap'> {
+  readonly async: boolean
   readonly contextualErrorMap?: ErrorMap
 }
 
-export type ParseOptions = utils.StrictOmit<ParseContextCommon, 'async'>
+export interface ParseContextCloneDef<O = unknown, I = O> {
+  readonly type: AnyTType<O, I>
+}
 
-export type ParseContextDef<Output = unknown, Input = Output> = {
-  readonly schema: AnyZ<Output, Input>
+export interface ParseContextChildDef<O = unknown, I = O> extends ParseContextCloneDef<O, I> {
   readonly data: unknown
-  readonly path: ParsePath
+  readonly path?: ParsePath
+}
+
+export interface ParseContextDef<O = unknown, I = O> extends Required<ParseContextChildDef<O, I>> {
   readonly parent: ParseContext | null
   readonly common: ParseContextCommon
 }
 
-export class ParseContext<Output = unknown, Input = Output> {
-  private _status: ParseStatus = ParseStatus.Valid
-
-  private readonly _children: ParseContext[] = []
-  private readonly _issues: AnyIssue[] = []
-
-  private constructor(private readonly _def: ParseContextDef<Output, Input>) {}
-
-  get schema() {
-    return this._def.schema
-  }
-
-  get data(): unknown {
-    return this._def.data
-  }
-
-  get dataType(): ParsedType {
-    return getParsedType(this.data)
-  }
-
-  setData(data: unknown): this {
-    Object.assign(this._def, { data })
-    return this
-  }
-
-  get path(): ParsePath {
-    return this._def.path
-  }
-
-  get parent(): ParseContext | null {
-    return this._def.parent
-  }
-
-  get common(): ParseContextCommon {
-    return this._def.common
-  }
-
-  get ownChildren(): readonly ParseContext[] {
-    return this._children
-  }
-
-  get allChildren(): readonly ParseContext[] {
-    return [
-      ...this.ownChildren,
-      ...this.ownChildren.flatMap((child) => child.allChildren),
-    ]
-  }
-
-  child<ChildOut, ChildIn>(def: {
-    readonly schema: AnyZ<ChildOut, ChildIn>
-    readonly data: unknown
-    readonly path: ParsePath
-  }): ParseContextOf<AnyZ<ChildOut, ChildIn>> {
-    const child = new ParseContext<ChildOut, ChildIn>({
-      schema: def.schema,
-      data: def.data,
-      path: [...this.path, ...def.path],
-      parent: this,
-      common: this.common,
-    })
-
-    this._children.push(child)
-
-    return child
-  }
-
-  get ownIssues(): readonly AnyIssue[] {
-    return this._issues
-  }
-
-  get allIssues(): readonly AnyIssue[] {
-    return [
-      ...this.ownIssues,
-      ...this.ownChildren.flatMap((child) => child.allIssues),
-    ]
-  }
-
-  getStatus(): ParseStatus {
-    return this._status
-  }
-
-  setStatus(newStatus: ParseStatus): this {
-    const currentStatus = this.getStatus()
-    if (currentStatus === ParseStatus.Invalid) {
-      return this
-    } else if (currentStatus === ParseStatus.Dirty) {
-      if (newStatus === ParseStatus.Invalid) {
-        this._status = newStatus
-        this.parent?.setStatus(newStatus)
-      }
-      return this
-    }
-    this._status = newStatus
-    if (newStatus === ParseStatus.Invalid) {
-      this.parent?.setStatus(newStatus)
-    }
-    return this
-  }
-
-  get isValid(): boolean {
-    return (
-      this.getStatus() === ParseStatus.Valid &&
-      this.ownChildren.every((child) => child.isValid)
-    )
-  }
-
-  get isDirty(): boolean {
-    return (
-      this.getStatus() === ParseStatus.Dirty ||
-      this.ownChildren.some((child) => child.isDirty)
-    )
-  }
-
-  get isInvalid(): boolean {
-    return (
-      this.getStatus() === ParseStatus.Invalid ||
-      this.ownChildren.some((child) => child.isInvalid)
-    )
-  }
-
-  OK<T extends Output>(value: T): SuccessfulParseResult<T> {
-    return { ok: true, data: value }
-  }
-
-  ABORT(): FailedParseResult<Output, Input> {
-    return { ok: false, error: ZError.create(this) }
-  }
-
-  DIRTY<K extends IssueKind>(
+export interface ParseContext<O = unknown, I = O> {
+  readonly type: AnyTType<O, I>
+  readonly data: unknown
+  readonly dataType: TParsedType
+  readonly path: ParsePath
+  readonly parent: ParseContext | null
+  readonly common: ParseContextCommon
+  readonly ownChildren: readonly ParseContext[]
+  readonly allChildren: readonly ParseContext[]
+  readonly ownIssues: readonly Issue[]
+  readonly allIssues: readonly Issue[]
+  setData(data: unknown): this
+  clone<O_, I_>(def: ParseContextCloneDef<O_, I_>): ParseContext<O_, I_>
+  child<O_, I_>(def: ParseContextChildDef<O_, I_>): ParseContext<O_, I_>
+  isValid(): boolean
+  isInvalid(): boolean
+  setStatus(status: ParseStatus): this
+  addIssue<K extends IssueKind>(
     kind: K,
-    ...arguments_: {
-      0: [message?: string | undefined]
-      1: [payload: GetIssuePayload<K>, message?: string | undefined]
-    }[IssueHasPayload<K>]
-  ): this {
-    const {
-      _issues,
-      common,
-      data,
-      dataType,
-      isInvalid,
-      isValid,
-      path,
-      schema,
-    } = this
-
-    if (common.abortEarly) {
-      if (isInvalid) {
-        return this
-      }
-      this.setStatus(ParseStatus.Invalid)
-    } else if (isValid) {
-      this.setStatus(ParseStatus.Dirty)
-    }
-
-    const [payloadOrMessage, maybeMessage] = arguments_
-
-    const payload =
-      typeof payloadOrMessage === 'string' ? undefined : payloadOrMessage
-
-    const message =
-      typeof payloadOrMessage === 'string' ? payloadOrMessage : maybeMessage
-
-    const partialIssue: Omit<AnyIssue, 'message'> = {
-      kind,
-      payload,
-      input: { data, type: dataType },
-      path,
-      origin: schema.typeName,
-      hint: schema.hint,
-    }
-
-    const issueMessage: string =
-      message ||
-      resolveErrorMap(
-        [
-          common.contextualErrorMap,
-          schema._def.schemaErrorMap,
-          ZGlobal.get().getCurrentErrorMap(),
-          DEFAULT_ERROR_MAP,
-        ]
-          .filter(utils.isDefined)
-          .reverse()
-          .reduce(
-            (message, map) =>
-              resolveToErrorMapFunction(map, partialIssue)(
-                partialIssue as ErrorMapIssue<K>,
-                { defaultMessage: message }
-              ),
-            ''
-          )
-      )
-
-    _issues.push({ ...partialIssue, message: issueMessage })
-
-    return this
-  }
-
-  INVALID_TYPE(
-    payload: OmitFromIssuePayload<'invalid_type', 'received'>
-  ): this {
-    if (this.data === undefined) {
-      return this.DIRTY(IssueKind.Required)
-    }
-    return this.DIRTY(IssueKind.InvalidType, {
-      ...payload,
-      received: this.dataType,
-    })
-  }
-
-  INVALID_ENUM_VALUE(
-    data: ZEnumValue,
-    payload: utils.StrictOmit<
-      PickFromIssuePayload<'invalid_enum_value', 'expected'>['expected'],
-      'formatted'
-    >
-  ): this {
-    return this.DIRTY(IssueKind.InvalidEnumValue, {
-      expected: { ...payload, formatted: this.schema.hint },
-      received: { value: data, formatted: utils.literalize(data) },
-    })
-  }
-
-  TOO_SMALL(
-    type: PickFromIssuePayload<'too_small', 'type'>['type'],
-    payload: OmitFromIssuePayload<'too_small', 'type'>
-  ): this {
-    return this.DIRTY(IssueKind.TooSmall, { type, ...payload })
-  }
-
-  TOO_BIG(
-    type: PickFromIssuePayload<'too_big', 'type'>['type'],
-    payload: OmitFromIssuePayload<'too_big', 'type'>
-  ): this {
-    return this.DIRTY(IssueKind.TooBig, { type, ...payload })
-  }
-
-  FORBIDDEN() {
-    return this.DIRTY(IssueKind.Forbidden)
-  }
-
-  static createSync<T extends AnyZ>(
-    schema: T,
-    data: unknown,
-    options?: ParseOptions
-  ): ParseContextOf<T> {
-    return new ParseContext({
-      schema,
-      data,
-      path: [],
-      parent: null,
-      common: { ...options, async: false },
-    })
-  }
-
-  static createAsync<T extends AnyZ>(
-    schema: T,
-    data: unknown,
-    options?: ParseOptions
-  ): ParseContextOf<T> {
-    return new ParseContext({
-      schema,
-      data,
-      path: [],
-      parent: null,
-      common: { ...options, async: true },
-    })
-  }
+    ...arguments_: K extends unknown
+      ? 'payload' extends keyof Issue<K>
+        ? [payload: Issue<K>['payload'], message?: string]
+        : [message?: string]
+      : never
+  ): this
+  INVALID_TYPE(payload: { readonly expected: TParsedType }): this
+  INVALID_LITERAL(payload: { readonly expected: LiteralValue; readonly received: LiteralValue }): this
+  INVALID_UNION(payload: { readonly unionErrors: TError<O, I>[] }): this
+  INVALID_INSTANCE(payload: { readonly expected: string }): this
+  FORBIDDEN(): this
+  OK<D extends O>(data: D): SuccessfulParseResult<D>
+  ABORT(): FailedParseResult<O, I>
 }
 
-export type ParseContextOf<T> = ParseContext<OutputOf<T>, InputOf<T>>
+export const tparse = <O, I>(def: ParseContextDef<O, I>): ParseContext<O, I> => {
+  const { type, data, path, common, parent } = def
+
+  const _internals = { status: ParseStatus.Valid, data }
+  const _ownChildren: ParseContext[] = []
+  const _ownIssues: Issue[] = []
+
+  const ctx: ParseContext<O, I> = {
+    get type() {
+      return type
+    },
+    get data() {
+      return _internals.data
+    },
+    get dataType() {
+      return getParsedType(ctx.data)
+    },
+    get path() {
+      return [...path]
+    },
+    get parent() {
+      return parent
+    },
+    get common() {
+      return common
+    },
+    get ownChildren() {
+      return [..._ownChildren]
+    },
+    get allChildren() {
+      return [...ctx.ownChildren, ...ctx.ownChildren.flatMap((child) => child.allChildren)]
+    },
+    get ownIssues() {
+      return [..._ownIssues]
+    },
+    get allIssues() {
+      return [...ctx.ownIssues, ...ctx.allChildren.flatMap((child) => child.allIssues)]
+    },
+    setData: (data) => {
+      _internals.data = data
+      return ctx
+    },
+    clone: (def) => {
+      const { type } = def
+      const clone = tparse({ ...ctx, type })
+      _ownChildren.push(clone)
+      return clone
+    },
+    child: (def) => {
+      const { type, data, path } = def
+      const child = tparse({
+        type,
+        data,
+        path: [...ctx.path, ...(path ?? [])],
+        parent: ctx,
+        common: ctx.common,
+      })
+      _ownChildren.push(child)
+      return child
+    },
+    isValid: () => _internals.status === ParseStatus.Valid && ctx.allChildren.every((child) => child.isValid()),
+    isInvalid: () => _internals.status === ParseStatus.Invalid || ctx.allChildren.some((child) => child.isInvalid()),
+    setStatus: (status) => {
+      if (ctx.isInvalid() || _internals.status === status) {
+        return ctx
+      }
+      _internals.status = status
+      ctx.parent?.setStatus(status)
+      return ctx
+    },
+    addIssue: (kind, ...arguments_) => {
+      if (ctx.common.abortEarly && ctx.isInvalid()) {
+        return ctx
+      }
+
+      if (ctx.isValid()) {
+        ctx.setStatus(ParseStatus.Invalid)
+      }
+
+      const [payload, message] =
+        typeof arguments_[0] === 'string' ? [null, arguments_[0]] : [arguments_[0], arguments_[1]]
+
+      const issue = {
+        kind,
+        payload,
+        input: { data, type: ctx.dataType },
+        path,
+        typeName: ctx.type.typeName,
+        typeHint: ctx.type.hint,
+      } as Issue
+
+      const issueMessage =
+        message ??
+        [ctx.common.contextualErrorMap, ctx.type._internals.errorMap, DEFAULT_ERROR_MAP]
+          .filter(utils.isNonNullable)
+          .reverse()
+          .reduce((message, map) => map(issue, { defaultMessage: message }), '')
+
+      _ownIssues.push({ ...issue, message: issueMessage })
+
+      return ctx
+    },
+    INVALID_TYPE: ({ expected }) =>
+      ctx.data === undefined
+        ? ctx.addIssue(IssueKind.Required)
+        : ctx.addIssue(IssueKind.InvalidType, { expected, received: ctx.dataType }),
+    INVALID_LITERAL: ({ expected, received }) =>
+      ctx.addIssue(IssueKind.InvalidLiteral, {
+        expected: { value: expected, formatted: utils.literalize(expected) },
+        received: { value: received, formatted: utils.literalize(received) },
+      }),
+    INVALID_UNION: ({ unionErrors }) => ctx.addIssue(IssueKind.InvalidUnion, { unionErrors }),
+    INVALID_INSTANCE: ({ expected }) => ctx.addIssue(IssueKind.InvalidInstance, { expected: { className: expected } }),
+    FORBIDDEN: () => ctx.addIssue(IssueKind.Forbidden),
+    OK: (data) => ({ ok: true, data }),
+    ABORT: () => ({ ok: false, error: new TError(ctx) }),
+  }
+
+  return ctx
+}
+
+const _handleCreateParseContext =
+  (async: boolean) =>
+  <O, I>(type: AnyTType<O, I>, data: unknown, options: ParseOptions | undefined) =>
+    tparse({
+      type,
+      data,
+      path: [],
+      parent: null,
+      common: {
+        ...utils.omit(utils.cloneDeep(options ?? {}), ['errorMap']),
+        contextualErrorMap: options?.errorMap,
+        async,
+      },
+    })
+
+tparse.createSync = _handleCreateParseContext(false)
+tparse.createAsync = _handleCreateParseContext(true)
+
+/* ------------------------------------------------------------------------------------------------------------------ */
+/*                                                     ParsedType                                                     */
+/* ------------------------------------------------------------------------------------------------------------------ */
+
+export enum TParsedType {
+  Array = 'Array',
+  BigInt = 'bigint',
+  Boolean = 'boolean',
+  Buffer = 'Buffer',
+  Date = 'Date',
+  Function = 'Function',
+  Map = 'Map',
+  NaN = 'NaN',
+  Null = 'null',
+  Number = 'number',
+  Object = 'object',
+  Promise = 'Promise',
+  RegExp = 'RegExp',
+  Set = 'Set',
+  String = 'string',
+  Symbol = 'symbol',
+  Undefined = 'undefined',
+  Unknown = 'unknown',
+  Void = 'void',
+}
+
+export const getParsedType = (data: unknown): TParsedType => {
+  switch (typeof data) {
+    case 'string': {
+      return TParsedType.String
+    }
+    case 'number': {
+      if (Number.isNaN(data)) {
+        return TParsedType.NaN
+      }
+      return TParsedType.Number
+    }
+    case 'bigint': {
+      return TParsedType.BigInt
+    }
+    case 'boolean': {
+      return TParsedType.Boolean
+    }
+    case 'symbol': {
+      return TParsedType.Symbol
+    }
+    case 'function': {
+      return TParsedType.Function
+    }
+    case 'undefined': {
+      return TParsedType.Undefined
+    }
+    case 'object': {
+      if (data === null) return TParsedType.Null
+      if (Array.isArray(data)) return TParsedType.Array
+      if (data instanceof Buffer) return TParsedType.Buffer
+      if (data instanceof Date) return TParsedType.Date
+      if (data instanceof Map) return TParsedType.Map
+      if (data instanceof Promise) return TParsedType.Promise
+      if (data instanceof RegExp) return TParsedType.RegExp
+      if (data instanceof Set) return TParsedType.Set
+      return TParsedType.Object
+    }
+  }
+}
