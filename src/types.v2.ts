@@ -28,12 +28,7 @@ export type MakeTDef<
   readonly checks: C
 }
 
-export interface TType<O = unknown, Def extends TDef = TDef, I = O> {
-  readonly _O: O
-  readonly _I: I
-  readonly _properties: Def['properties']
-  readonly typeName: Def['typeName']
-  readonly hint: Def['hint']
+export interface TParser<O = unknown, I = O> {
   _parse(ctx: ParseContext<O, I>): ParseResult<O, I>
   _parseSync(ctx: ParseContext<O, I>): SyncParseResult<O, I>
   _parseAsync(ctx: ParseContext<O, I>): AsyncParseResult<O, I>
@@ -41,6 +36,14 @@ export interface TType<O = unknown, Def extends TDef = TDef, I = O> {
   safeParseAsync(data: unknown, options?: utils.Simplify<ParseOptions>): AsyncParseResult<O, I>
   parse(data: unknown, options?: utils.Simplify<ParseOptions>): O
   parseAsync(data: unknown, options?: utils.Simplify<ParseOptions>): Promise<O>
+}
+
+export interface TType<O = unknown, Def extends TDef = TDef, I = O> extends TParser<O, I> {
+  readonly _O: O
+  readonly _I: I
+  readonly _properties: Def['properties']
+  readonly typeName: Def['typeName']
+  readonly hint: Def['hint']
 }
 
 export const ttype = <O, I = O>() => ({
@@ -174,14 +177,14 @@ export const tunknown = (): TUnknown =>
     .handleParse((_, ctx) => ctx.OK(ctx.data))
     .build()
 
+/* ------------------------------------------------------------------------------------------------------------------ */
+/*                                                        Array                                                       */
+/* ------------------------------------------------------------------------------------------------------------------ */
+
 export interface TArray<T extends AnyTType>
   extends TType<T['_O'][], MakeTDef<TTypeName.Array, { readonly element: T }, `${T['hint']}[]`>, T['_I'][]> {
   readonly element: T
 }
-
-/* ------------------------------------------------------------------------------------------------------------------ */
-/*                                                        Array                                                       */
-/* ------------------------------------------------------------------------------------------------------------------ */
 
 export const tarray = <T extends TType>(element: T): TArray<T> =>
   ttype<T['_O'][], T['_I'][]>()
