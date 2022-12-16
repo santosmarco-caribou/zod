@@ -1,6 +1,6 @@
 import { DEFAULT_ERROR_MAP, TError, type ErrorMap } from './error'
 import { IssueKind, type Issue } from './issues'
-import type { AnyTType, LiteralValue } from './types'
+import type { AnyTType } from './types.v2'
 import { utils } from './utils'
 
 /* ------------------------------------------------------------------------------------------------------------------ */
@@ -59,7 +59,7 @@ export interface ParseContextDef<O = unknown, I = O> extends Required<ParseConte
 }
 
 export interface ParseContext<O = unknown, I = O> {
-  readonly type: AnyTType<O, I>
+  readonly type: AnyTType
   readonly data: unknown
   readonly dataType: TParsedType
   readonly path: ParsePath
@@ -92,7 +92,7 @@ export interface ParseContext<O = unknown, I = O> {
   ABORT(): FailedParseResult<O, I>
 }
 
-export const tparse = <O, I>(def: ParseContextDef<O, I>): ParseContext<O, I> => {
+export const ParseContext = <O, I>(def: ParseContextDef<O, I>): ParseContext<O, I> => {
   const { type, data, path, common, parent } = def
 
   const _internals = { status: ParseStatus.Valid, data }
@@ -136,13 +136,13 @@ export const tparse = <O, I>(def: ParseContextDef<O, I>): ParseContext<O, I> => 
     },
     clone: (def) => {
       const { type } = def
-      const clone = tparse({ ...ctx, type })
+      const clone = ParseContext({ ...ctx, type })
       _ownChildren.push(clone)
       return clone
     },
     child: (def) => {
       const { type, data, path } = def
-      const child = tparse({
+      const child = ParseContext({
         type,
         data,
         path: [...ctx.path, ...(path ?? [])],
@@ -215,8 +215,8 @@ export const tparse = <O, I>(def: ParseContextDef<O, I>): ParseContext<O, I> => 
 
 const _handleCreateParseContext =
   (async: boolean) =>
-  <O, I>(type: AnyTType<O, I>, data: unknown, options: ParseOptions | undefined) =>
-    tparse({
+  <O, I>(type: { readonly _O: O; readonly _I: I }, data: unknown, options: ParseOptions | undefined) =>
+    ParseContext({
       type,
       data,
       path: [],
@@ -228,8 +228,8 @@ const _handleCreateParseContext =
       },
     })
 
-tparse.createSync = _handleCreateParseContext(false)
-tparse.createAsync = _handleCreateParseContext(true)
+ParseContext.createSync = _handleCreateParseContext(false)
+ParseContext.createAsync = _handleCreateParseContext(true)
 
 /* ------------------------------------------------------------------------------------------------------------------ */
 /*                                                     ParsedType                                                     */

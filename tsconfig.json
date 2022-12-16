@@ -30,7 +30,8 @@
     "strictNullChecks": true,
     "strictPropertyInitialization": true,
     "target": "ES6",
-    "traceResolution": false
+    "traceResolution": false,
+    "strictBindCallApply": true
   },
   "exclude": ["node_modules/**"],
   "include": ["src/**/*.ts"]
